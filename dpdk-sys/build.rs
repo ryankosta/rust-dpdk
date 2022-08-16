@@ -179,7 +179,7 @@ impl State {
         let config_header = PathBuf::from("/usr/local/include/rte_config.h");
         if config_header.exists() {
             self.include_path = Some(PathBuf::from("/usr/local/include"));
-            self.library_path = Some(PathBuf::from(format!("/usr/local/lib/{}", machine_string)));
+            self.library_path = Some(PathBuf::from("/usr/local/lib64/"));
         } else {
             panic!("DPDK is not installed on your system! (Cannot find /usr/local/include/dpdk/rte_config.h)")
         }
@@ -405,8 +405,11 @@ impl State {
             // "rte_devargs.h",
             // "rte_eal_interrupts.h",
             // "rte_eal_memconfig.h",
-            // "rte_eal.h",
-            // "rte_errno.h",
+            "rte_eal.h",
+            "rte_errno.h",
+            "rte_ring_core.h",
+            "rte_ring_elem.h",
+            "rte_ring.h",
             // "rte_fbarray.h",
             // "rte_function_versioning.h",
             // "rte_hexdump.h",
@@ -419,6 +422,7 @@ impl State {
             // "rte_malloc.h",
             // "rte_memory.h",
             // "rte_memzone.h",
+            "rte_mempool.h",
             // "rte_option.h",
             // "rte_pci_dev_feature_defs.h",
             // "rte_pci_dev_features.h",
