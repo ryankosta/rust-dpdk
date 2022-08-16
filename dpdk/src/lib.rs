@@ -5,3 +5,9 @@ mod ffi;
 
 pub mod eal;
 pub mod zeroable;
+
+/// Reexport of [arrayvec][arrayvec] crate
+///
+/// This is reexported so that downstream crates don't have to manually import arrayvec and won't
+/// have version conflicts
+pub use arrayvec;
