@@ -4,3 +4,4 @@
 mod ffi;
 
 pub mod eal;
+pub mod zeroable;
