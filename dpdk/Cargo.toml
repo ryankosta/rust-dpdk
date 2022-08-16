@@ -21,8 +21,8 @@ etrace = "1"
 log = "0.4"
 simple_logger = "= 1.11"
 anyhow = "1.0"
-arrayvec = "0.5"
-crossbeam = "0.7"
+arrayvec = "0.7"
+crossbeam-utils = "0.8"
 
 [lib]
 name = "dpdk"

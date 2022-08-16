@@ -25,10 +25,10 @@ pub struct TestPriv {
     to_port: u16,
     to_queue: u16,
 }
-unsafe impl Zeroable for TestPriv {}
+unsafe impl dpdk::zeroable::Zeroable for TestPriv {}
 
-fn sender(eal: Eal, mpool: MPool<TestPriv>, tx_queue: TxQ) {
-    let tx_port = tx_queue.port();
+fn sender<'pool>(eal: &Eal, mpool: &'pool MPool<TestPriv>, mut tx_queue: TxQ<'pool>) {
+    let tx_port = tx_queue.port().clone();
     info!("Start TX from {:?}", tx_port.mac_addr());
 
     // Wait for the link to be connected.
@@ -37,9 +37,9 @@ fn sender(eal: Eal, mpool: MPool<TestPriv>, tx_queue: TxQ) {
     }
     info!("TX Link is up {:?}", tx_port.mac_addr());
 
-    let mut pkts = ArrayVec::<[Packet<TestPriv>; DEFAULT_TX_BURST]>::new();
+    let mut pkts = ArrayVec::<Packet<TestPriv>, DEFAULT_TX_BURST>::new();
     // Safety: packet is created and transmitted before `mpool` is destroyed.
-    unsafe { mpool.alloc_bulk(&mut pkts) };
+    mpool.alloc_bulk(&mut pkts);
     pkts.iter_mut().for_each(|pkt| {
         pkt.priv_data_mut().to_port = tx_port.port_id();
         pkt.priv_data_mut().to_queue = tx_queue.queue_id();
@@ -86,7 +86,7 @@ fn sender(eal: Eal, mpool: MPool<TestPriv>, tx_queue: TxQ) {
     // Safety: mpool must not be deallocated before TxQ is destroyed.
 }
 
-fn receiver(eal: Eal, rx_queue: RxQ<TestPriv>) {
+fn receiver(eal: &Eal, rx_queue: RxQ<TestPriv>) {
     let rx_port = rx_queue.port();
     info!("RX started at {:?}", rx_port.mac_addr());
 
@@ -99,7 +99,7 @@ fn receiver(eal: Eal, rx_queue: RxQ<TestPriv>) {
     // We will try to collect every TX packets.
     // We will collect all sent packets and additional background packets.
     // Thus we need 2 * TX_BURST to collect everything.
-    let mut pkts = ArrayVec::<[Packet<TestPriv>; DEFAULT_TX_BURST * 2]>::new();
+    let mut pkts = ArrayVec::<Packet<TestPriv>, { DEFAULT_TX_BURST * 2 }>::new();
     loop {
         rx_queue.rx(&mut pkts);
         if pkts.len() >= DEFAULT_TX_BURST {
@@ -127,30 +127,23 @@ fn main() -> Result<()> {
         DEFAULT_PACKET_DATA_LENGTH,
         None,
     );
+    let (port, (rxq, txq)) = eal.ports()?.swap_remove(0).init(1, 1, None);
+    let lcores = eal.lcores();
+    dpdk::thread::scope(|s| {
+        lcores[0].launch(s, |lcore| {
+            info!("Lcore {:?}: starting sender and receiver", lcore);
+            port.set_promiscuous(true);
+            port.start().unwrap();
+            sender(&eal, &default_mpool, txq.into_iter().nth(0).unwrap());
+            receiver(&eal, rxq.into_iter().nth(0).unwrap());
+        });
 
-    crossbeam::thread::scope(|s| {
-        let threads =
-            eal.setup(Affinity::Full, Affinity::Full)?
-                .into_iter()
-                .map(|(lcore, rxs, txs)| {
-                    let local_eal = eal.clone();
-                    let local_mpool = default_mpool.clone();
-                    lcore.launch(s, move || {
-                        match lcore.into() {
-                            // Core 0 action: TX packets to txq[0]
-                            0 => {
-                                sender(local_eal.clone(), local_mpool, txs[0].clone());
-                                receiver(local_eal, rxs[1].clone());
-                                true
-                            }
-                            // Otherwise, do nothing
-                            _ => true,
-                        }
-                    })
-                });
-        let ret = threads.into_iter().map(|x| x.join().unwrap()).all(|x| x);
-        assert_eq!(ret, true);
-        Ok(())
+        for &lcore in &lcores[1..] {
+            lcore.launch(s, |lcore| {
+                info!("Lcore {:?}: do nothing", lcore);
+            });
+        }
     })
-    .map_err(|err| anyhow!("{:?}", err))?
+    .map_err(|err| anyhow!("{:?}", err))?;
+    Ok(())
 }
